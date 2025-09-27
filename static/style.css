@@ -50,3 +50,27 @@ footer{margin-top:24px;color:#6b7280}
   .left, .right{margin:0;width:auto}
   .right{margin-top:16px}
 }
+
+/* Login Page Styles */
+.login-page {
+  color: #39FF14;
+  text-align: center;
+}
+
+.login-page header {
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+}
+
+.login-logo {
+  height: 150px;
+}
+
+.login-page .left {
+  float: none;
+  margin: 0 auto;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 20px;
+  border-radius: 8px;
+}
