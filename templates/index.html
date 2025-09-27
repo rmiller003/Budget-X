@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Budget App</title>
+  <title>RPM Budget App</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Budget App</h1>
+      <h1>RPM Budget App</h1>
       <form id="monthForm" method="get" action="/">
         <label for="month">Month:</label>
         <input type="month" name="month" id="month" value="{{ month }}">
