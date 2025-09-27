@@ -65,7 +65,7 @@
       <ul class="categories">
         {% for c in categories %}
         <li>{{ c.name }}
-          <form method="post" action="{{ url_for('delete_category', cat_id=c.id) }}" style="display:inline">
+          <form method="post" action="{{ url_for('delete_category', cat_id=c.id) }}" style="display:inline" onsubmit="return confirm('Delete category? This will uncategorize all associated transactions.')">
             <button type="submit" title="Delete">✕</button>
           </form>
         </li>
