@@ -10,7 +10,10 @@
 <body>
   <div class="container">
     <header>
-      <h1>Budget App</h1>
+      <div class="header-content">
+        <img src="{{ url_for('static', filename='Infinity6.png') }}" alt="Logo" class="logo">
+        <h1>RPM Budget 2025</h1>
+      </div>
       <form id="monthForm" method="get" action="/">
         <label for="month">Month:</label>
         <input type="month" name="month" id="month" value="{{ month }}">
