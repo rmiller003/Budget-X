@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, flash
 import sqlite3
 from datetime import datetime
 import csv
@@ -8,6 +8,7 @@ import os
 DB_FILE = "budget.db"
 
 app = Flask(__name__)
+app.secret_key = 'your_very_secret_key'  # Change this in a real app!
 
 def get_db():
     conn = sqlite3.connect(DB_FILE)
@@ -64,8 +65,29 @@ def query(sql, args=(), one=False):
     conn.close()
     return (rv[0] if rv else None) if one else rv
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        if username == 'rmiller' and password == 'Trust30bonD$':
+            session['logged_in'] = True
+            flash('You were successfully logged in')
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid credentials')
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    flash('You were logged out')
+    return redirect(url_for('login'))
+
 @app.route("/")
 def index():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
     # default month = current year-month
     month = request.args.get("month")
     if not month:
@@ -114,6 +136,46 @@ def add_transaction():
     conn.commit()
     conn.close()
     return redirect(url_for("index", month=date[:7]))
+
+@app.route('/edit_transaction/<int:tx_id>', methods=['GET', 'POST'])
+def edit_transaction(tx_id):
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        date = request.form.get("date")
+        description = request.form.get("description", "")
+        category_id = request.form.get("category_id")
+        amount = request.form.get("amount")
+        ttype = request.form.get("type", "expense")
+
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+            amount_val = float(amount)
+        except Exception:
+            return "Invalid input", 400
+
+        if category_id == "" or category_id is None:
+            category_id = None
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE transactions
+            SET date = ?, description = ?, category_id = ?, amount = ?, type = ?
+            WHERE id = ?
+        """, (date, description, category_id, amount_val, ttype, tx_id))
+        conn.commit()
+        conn.close()
+        return redirect(url_for('index', month=date[:7]))
+
+    # GET request
+    transaction = query("SELECT * FROM transactions WHERE id = ?", (tx_id,), one=True)
+    if not transaction:
+        return "Transaction not found", 404
+
+    categories = query("SELECT * FROM categories ORDER BY name")
+    return render_template('edit_transaction.html', transaction=transaction, categories=categories)
 
 @app.route("/delete_transaction/<int:tx_id>", methods=["POST"])
 def delete_transaction(tx_id):
