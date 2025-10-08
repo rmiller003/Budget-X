@@ -74,3 +74,12 @@ footer{margin-top:24px;color:#6b7280}
   padding: 20px;
   border-radius: 8px;
 }
+
+.chart-container {
+  display: flex;
+  gap: 20px;
+}
+
+.chart-container > div {
+  flex: 1;
+}

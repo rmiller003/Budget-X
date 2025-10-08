@@ -232,10 +232,23 @@ def api_summary():
         GROUP BY c.name
         ORDER BY total DESC
     """, (month,))
+    # monthly expenses for the last 12 months
+    monthly_expenses = query("""
+        SELECT * FROM (
+            SELECT substr(date, 1, 7) as month, SUM(amount) as total
+            FROM transactions
+            WHERE type = 'expense'
+            GROUP BY 1
+            ORDER BY 1 DESC
+            LIMIT 12
+        )
+        ORDER BY month ASC
+    """)
     res = {
         "month": month,
         "totals": {r["type"]: r["total"] for r in totals},
-        "breakdown": [{"category": r["category"] or "Uncategorized", "total": r["total"]} for r in breakdown]
+        "breakdown": [{"category": r["category"] or "Uncategorized", "total": r["total"]} for r in breakdown],
+        "monthly_expenses": [{"month": r["month"], "total": r["total"]} for r in monthly_expenses]
     }
     return jsonify(res)
 

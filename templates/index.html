@@ -100,8 +100,16 @@
         </tbody>
       </table>
 
-      <h2>Expense breakdown</h2>
-      <canvas id="breakdownChart" width="400" height="200"></canvas>
+      <div class="chart-container">
+        <div>
+          <h2>Expense Breakdown</h2>
+          <canvas id="breakdownChart" width="400" height="200"></canvas>
+        </div>
+        <div>
+          <h2>Monthly Expenses</h2>
+          <canvas id="monthlyExpensesChart" width="400" height="200"></canvas>
+        </div>
+      </div>
     </section>
 
     <footer>
@@ -110,24 +118,27 @@
   </div>
 
   <script>
-    // request summary data and render chart
-    async function renderChart() {
+    // request summary data and render charts
+    async function renderCharts() {
       const month = new URLSearchParams(window.location.search).get('month') || '{{ month }}';
       const res = await fetch(`/api/summary?month=${month}`);
       const data = await res.json();
-      const labels = data.breakdown.map(b => b.category);
-      const totals = data.breakdown.map(b => b.total ? parseFloat(b.total) : 0);
 
-      const ctx = document.getElementById('breakdownChart').getContext('2d');
-      // destroy previous chart if exists
+      // destroy previous charts if they exist
       if (window._budgetChart) window._budgetChart.destroy();
-      window._budgetChart = new Chart(ctx, {
+      if (window._monthlyExpensesChart) window._monthlyExpensesChart.destroy();
+
+      // Render breakdown chart
+      const breakdownCtx = document.getElementById('breakdownChart').getContext('2d');
+      const breakdownLabels = data.breakdown.map(b => b.category);
+      const breakdownTotals = data.breakdown.map(b => b.total ? parseFloat(b.total) : 0);
+      window._budgetChart = new Chart(breakdownCtx, {
         type: 'pie',
         data: {
-          labels,
+          labels: breakdownLabels,
           datasets: [{
             label: 'Expenses by category',
-            data: totals
+            data: breakdownTotals
           }]
         },
         options: {
@@ -136,8 +147,35 @@
           }
         }
       });
+
+      // Render monthly expenses chart
+      const monthlyCtx = document.getElementById('monthlyExpensesChart').getContext('2d');
+      const monthlyLabels = data.monthly_expenses.map(m => m.month);
+      const monthlyTotals = data.monthly_expenses.map(m => m.total ? parseFloat(m.total) : 0);
+      window._monthlyExpensesChart = new Chart(monthlyCtx, {
+        type: 'bar',
+        data: {
+          labels: monthlyLabels,
+          datasets: [{
+            label: 'Total Expenses',
+            data: monthlyTotals,
+            backgroundColor: 'rgba(43, 108, 176, 0.8)'
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          scales: {
+            x: {
+              beginAtZero: true
+            }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      });
     }
-    renderChart();
+    renderCharts();
   </script>
 </body>
 </html>
