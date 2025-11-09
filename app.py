@@ -107,6 +107,11 @@ def index():
     income = 0.0
     expenses = 0.0
     for r in rows:
+        # Exclude L.TO Stock adjustments from the main income/expense totals so stock
+        # activity doesn't affect the monthly summary or graphs.
+        desc = (r["description"] or "")
+        if "L.TO Stock" in desc:
+            continue
         if r["type"] == "income":
             income += float(r["amount"])
         else:
@@ -136,6 +141,35 @@ def add_transaction():
     conn.commit()
     conn.close()
     return redirect(url_for("index", month=date[:7]))
+
+
+@app.route('/add_stock_adjustment', methods=['POST'])
+def add_stock_adjustment():
+    """Create a transaction representing a stock gain (income) or loss (expense).
+    Form fields: action=(add|subtract), amount, date (YYYY-MM-DD), optional description
+    """
+    action = request.form.get('action')
+    date = request.form.get('date') or datetime.now().strftime('%Y-%m-%d')
+    amount = request.form.get('amount')
+    description = request.form.get('description','L.TO Stock Adjustment')
+    if not amount:
+        return redirect(request.referrer or url_for('index'))
+    try:
+        amount_val = float(amount)
+        datetime.strptime(date, "%Y-%m-%d")
+    except Exception:
+        return "Invalid input", 400
+    ttype = 'income' if action == 'add' else 'expense'
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO transactions (date, description, category_id, amount, type) VALUES (?,?,?,?,?)",
+                (date, description, None, amount_val, ttype))
+    conn.commit()
+    conn.close()
+    # redirect back with a small toast message so frontend can show confirmation
+    action_text = 'Added' if action == 'add' else 'Subtracted'
+    msg = f"{action_text} ${amount_val:,.2f}"
+    return redirect(url_for('index', month=date[:7], stock_toast=msg))
 
 @app.route('/edit_transaction/<int:tx_id>', methods=['GET', 'POST'])
 def edit_transaction(tx_id):
@@ -215,29 +249,74 @@ def delete_category(cat_id):
 @app.route("/api/summary")
 def api_summary():
     month = request.args.get("month")
-    if not month:
-        month = datetime.now().strftime("%Y-%m")
-    # totals and breakdown by category
-    totals = query("""
-        SELECT type, SUM(amount) as total
-        FROM transactions
-        WHERE substr(date,1,7)=?
-        GROUP BY type
-    """, (month,))
-    breakdown = query("""
-        SELECT c.name as category, SUM(t.amount) as total
-        FROM transactions t
-        LEFT JOIN categories c ON t.category_id = c.id
-        WHERE substr(t.date,1,7)=? AND t.type='expense'
-        GROUP BY c.name
-        ORDER BY total DESC
-    """, (month,))
-    res = {
-        "month": month,
-        "totals": {r["type"]: r["total"] for r in totals},
-        "breakdown": [{"category": r["category"] or "Uncategorized", "total": r["total"]} for r in breakdown]
-    }
-    return jsonify(res)
+    year = request.args.get("year")
+    if year:
+        # Return monthly expense and income totals for the year (for bar charts)
+        expense_rows = query("""
+            SELECT substr(date,1,7) as month, SUM(amount) as total
+            FROM transactions
+            WHERE type='expense' AND substr(date,1,4)=? AND description NOT LIKE '%L.TO Stock%'
+            GROUP BY month
+            ORDER BY month
+        """, (year,))
+        income_rows = query("""
+            SELECT substr(date,1,7) as month, SUM(amount) as total
+            FROM transactions
+            WHERE type='income' AND substr(date,1,4)=? AND description NOT LIKE '%L.TO Stock%'
+            GROUP BY month
+            ORDER BY month
+        """, (year,))
+        # Fill missing months with 0
+        months = [f"{year}-{str(m).zfill(2)}" for m in range(1,13)]
+        expense_totals = {r["month"]: r["total"] for r in expense_rows}
+        income_totals = {r["month"]: r["total"] for r in income_rows}
+        monthly_expenses = [{"month": m, "total": expense_totals.get(m, 0)} for m in months]
+        monthly_income = [{"month": m, "total": income_totals.get(m, 0)} for m in months]
+        # monthly stock adjustments (sum of transactions with description mentioning L.TO Stock)
+        stock_rows = query("""
+            SELECT substr(date,1,7) as month,
+                   SUM(CASE WHEN type='income' THEN amount WHEN type='expense' THEN -amount ELSE 0 END) as total
+            FROM transactions
+            WHERE description LIKE '%L.TO Stock%' AND substr(date,1,4)=?
+            GROUP BY month
+            ORDER BY month
+        """, (year,))
+        stock_totals = {r["month"]: r["total"] for r in stock_rows}
+        # compute cumulative (running) total for stock across the year and clamp to >= 0
+        monthly_stock_raw = [{"month": m, "total": float(stock_totals.get(m, 0))} for m in months]
+        cumulative = 0.0
+        monthly_stock = []
+        for item in monthly_stock_raw:
+            cumulative += item["total"]
+            if cumulative < 0:
+                cumulative = 0.0
+            monthly_stock.append({"month": item["month"], "total": cumulative})
+        return jsonify({"year": year, "monthly_expenses": monthly_expenses, "monthly_income": monthly_income, "monthly_stock": monthly_stock})
+    else:
+        if not month:
+            month = datetime.now().strftime("%Y-%m")
+        # totals and breakdown by category
+        # Exclude stock adjustments from the totals breakdown
+        totals = query("""
+            SELECT type, SUM(amount) as total
+            FROM transactions
+            WHERE substr(date,1,7)=? AND description NOT LIKE '%L.TO Stock%'
+            GROUP BY type
+        """, (month,))
+        breakdown = query("""
+            SELECT c.name as category, SUM(t.amount) as total
+            FROM transactions t
+            LEFT JOIN categories c ON t.category_id = c.id
+            WHERE substr(t.date,1,7)=? AND t.type='expense'
+            GROUP BY c.name
+            ORDER BY total DESC
+        """, (month,))
+        res = {
+            "month": month,
+            "totals": {r["type"]: r["total"] for r in totals},
+            "breakdown": [{"category": r["category"] or "Uncategorized", "total": r["total"]} for r in breakdown]
+        }
+        return jsonify(res)
 
 @app.route("/export_csv")
 def export_csv():

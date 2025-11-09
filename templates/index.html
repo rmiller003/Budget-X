@@ -6,6 +6,25 @@
   <title>RPM Budget 2025</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* Toast styles */
+    .toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(17,24,39,0.95);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 6px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+      transform: translateY(-10px);
+      opacity: 0;
+      transition: transform 240ms ease, opacity 240ms ease;
+      z-index: 2000;
+      font-size: 14px;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -99,9 +118,43 @@
         {% endfor %}
         </tbody>
       </table>
+      <!-- L.TO Stock panel: moved here to the right of transaction columns -->
+  <div style="float:right; width:320px; margin:8px 0 16px 16px; padding:8px; border-radius:8px; background:#000; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+        <h3 style="margin-top:0; text-align:center;">L.TO Stock</h3>
+  <div id="stockTotal" style="text-align:center;color:#fff;font-weight:700;margin-bottom:6px;">Total: $0.00 <small id="stockDelta" style="display:inline-block;margin-left:8px;font-weight:600;font-size:0.85rem;color:#888"></small></div>
+        <canvas id="stockChart" width="300" height="200"></canvas>
+        <div style="margin-top:8px; display:flex; gap:8px; justify-content:center;">
+          <form method="post" action="/add_stock_adjustment" style="display:flex; gap:6px; align-items:center;">
+            <input type="hidden" name="action" value="add">
+            <input type="hidden" name="date" value="{{ month }}-01">
+            <input type="number" step="0.01" name="amount" placeholder="Amount" required style="width:110px; padding:6px;">
+            <button type="submit" style="padding:6px 8px;">Add</button>
+          </form>
+          <form method="post" action="/add_stock_adjustment" style="display:flex; gap:6px; align-items:center;">
+            <input type="hidden" name="action" value="subtract">
+            <input type="hidden" name="date" value="{{ month }}-01">
+            <input type="number" step="0.01" name="amount" placeholder="Amount" required style="width:110px; padding:6px;">
+            <button type="submit" style="padding:6px 8px;">Subtract</button>
+          </form>
+        </div>
+      </div>
+    </section>
 
-      <h2>Expense breakdown</h2>
-      <canvas id="breakdownChart" width="400" height="200"></canvas>
+  <!-- Charts section: cleared so charts always sit below floated columns (L.TO panel on the right) -->
+  <section class="charts" style="clear:both; display:flex; gap:32px; align-items:flex-start; justify-content:flex-start; margin-top:16px;">
+      <div style="display: flex; flex-direction: column; align-items: center; width:320px;">
+        <h2 style="font-size:2.2rem; text-align: center;">Monthly Income</h2>
+        <canvas id="monthlyIncomeChart" width="320" height="320"></canvas>
+      </div>
+      <!-- L.TO Stock moved to the transactions column (right of the table) -->
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <h2 style="font-size:2.2rem; text-align: center;">Expense breakdown</h2>
+        <canvas id="breakdownChart" width="520" height="320"></canvas>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <h2 style="font-size:2.2rem; text-align: center;">Monthly expense totals</h2>
+        <canvas id="monthlyBarChart" width="520" height="320"></canvas>
+      </div>
     </section>
 
     <footer>
@@ -110,18 +163,19 @@
   </div>
 
   <script>
-    // request summary data and render chart
-    async function renderChart() {
+    // request summary data and render both charts
+    async function renderCharts() {
       const month = new URLSearchParams(window.location.search).get('month') || '{{ month }}';
       const res = await fetch(`/api/summary?month=${month}`);
       const data = await res.json();
+      // Pie chart data
       const labels = data.breakdown.map(b => b.category);
       const totals = data.breakdown.map(b => b.total ? parseFloat(b.total) : 0);
 
-      const ctx = document.getElementById('breakdownChart').getContext('2d');
-      // destroy previous chart if exists
+      // Pie chart
+      const ctxPie = document.getElementById('breakdownChart').getContext('2d');
       if (window._budgetChart) window._budgetChart.destroy();
-      window._budgetChart = new Chart(ctx, {
+      window._budgetChart = new Chart(ctxPie, {
         type: 'pie',
         data: {
           labels,
@@ -136,8 +190,145 @@
           }
         }
       });
+
+      // Bar chart: fetch monthly totals for the year
+      const year = month.slice(0, 4);
+      const resYear = await fetch(`/api/summary?year=${year}`);
+      const dataYear = await resYear.json();
+      // dataYear.monthly_expenses: [{month: '2025-01', total: 123.45}, ...]
+      const barLabels = dataYear.monthly_expenses.map(m => m.month);
+      const barTotals = dataYear.monthly_expenses.map(m => m.total ? parseFloat(m.total) : 0);
+      const barIncome = dataYear.monthly_income ? dataYear.monthly_income.map(m => m.total ? parseFloat(m.total) : 0) : [];
+      const ctxBar = document.getElementById('monthlyBarChart').getContext('2d');
+      if (window._monthlyBarChart) window._monthlyBarChart.destroy();
+      // Generate a different color for each month
+      const barColors = [
+        '#3182ce', '#38a169', '#e53e3e', '#d69e2e', '#805ad5', '#319795', '#f56565', '#ed8936', '#ecc94b', '#48bb78', '#4299e1', '#9f7aea'
+      ];
+      window._monthlyBarChart = new Chart(ctxBar, {
+        type: 'bar',
+        data: {
+          labels: barLabels,
+          datasets: [{
+            label: 'Monthly Expenses',
+            data: barTotals,
+            backgroundColor: barLabels.map((_, i) => barColors[i % barColors.length]),
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: { beginAtZero: true }
+          }
+        }
+      });
+
+      // Monthly income vertical bar chart
+      const ctxIncome = document.getElementById('monthlyIncomeChart').getContext('2d');
+      if (window._monthlyIncomeChart) window._monthlyIncomeChart.destroy();
+      window._monthlyIncomeChart = new Chart(ctxIncome, {
+        type: 'bar',
+        data: {
+          labels: barLabels,
+          datasets: [{
+            label: 'Monthly Income',
+            data: barIncome,
+            backgroundColor: barLabels.map((_, i) => barColors[(i+2) % barColors.length]),
+          }]
+        },
+        options: {
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+      // L.TO Stock chart (optional data from API: monthly_stock)
+      const ctxStockEl = document.getElementById('stockChart');
+      if (ctxStockEl) {
+        const ctxStock = ctxStockEl.getContext('2d');
+        if (window._stockChart) window._stockChart.destroy();
+  // monthly_stock now contains cumulative totals computed by the backend
+  // Use the returned cumulative series but clamp negatives to 0 just in case
+  const stockData = dataYear.monthly_stock ? dataYear.monthly_stock.map(m => Math.max(0, (m.total !== undefined ? parseFloat(m.total) : 0))) : [];
+        // update stock total display for the selected month
+        const stockTotalEl = document.getElementById('stockTotal');
+        if (stockTotalEl) {
+          const idx = barLabels.indexOf(month);
+          const val = (idx >= 0 && stockData.length > idx) ? stockData[idx] : (stockData.length ? stockData[stockData.length-1] : 0);
+          stockTotalEl.textContent = 'Total: $' + (val ? val.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : '0.00');
+          // color the total: green if positive, grey if zero
+          stockTotalEl.style.color = (val > 0) ? '#10b981' : '#9ca3af';
+          // update delta label (change from previous month)
+          const deltaEl = document.getElementById('stockDelta');
+          if (deltaEl) {
+            const prev = (idx > 0 && stockData.length > (idx-1)) ? stockData[idx-1] : 0;
+            const delta = val - prev;
+            const sign = delta > 0 ? '+' : (delta < 0 ? '-' : '');
+            const abs = Math.abs(delta).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+            deltaEl.textContent = (sign ? `(${sign}$${abs})` : '(0.00)');
+            deltaEl.style.color = delta > 0 ? '#10b981' : (delta < 0 ? '#ef4444' : '#9ca3af');
+          }
+        }
+        window._stockChart = new Chart(ctxStock, {
+          type: 'line',
+          data: {
+            labels: barLabels,
+            datasets: [{
+              label: 'L.TO Stock',
+              data: stockData,
+              borderColor: '#10b981',
+              backgroundColor: 'rgba(255,255,255,0.04)',
+              tension: 0.2,
+              pointRadius: 3,
+              pointBackgroundColor: '#ffffff',
+              spanGaps: true,
+              segment: {
+                borderColor: ctx => {
+                  const {p0, p1} = ctx;
+                  if (!p0 || !p1) return '#10b981';
+                  return (p1.parsed.y >= p0.parsed.y) ? '#10b981' : '#ef4444';
+                }
+              }
+            }]
+          },
+          options: {
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { color: '#ffffff' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+              y: { ticks: { color: '#ffffff' }, grid: { color: 'rgba(255,255,255,0.06)' } }
+            }
+          }
+        });
+      }
     }
-    renderChart();
+    renderCharts();
+    // show toast if stock_toast query param present
+    (function(){
+      const params = new URLSearchParams(window.location.search);
+      const msg = params.get('stock_toast');
+      if (!msg) return;
+      function showToast(text){
+        const el = document.createElement('div');
+        el.className = 'toast';
+        el.textContent = text;
+        document.body.appendChild(el);
+        // trigger animation
+        requestAnimationFrame(()=> el.classList.add('show'));
+        setTimeout(()=> el.classList.remove('show'), 2600);
+        setTimeout(()=> el.remove(), 3000);
+      }
+      showToast(decodeURIComponent(msg));
+      // remove param from URL
+      params.delete('stock_toast');
+      const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+      window.history.replaceState({}, '', newUrl);
+    })();
   </script>
 </body>
 </html>
